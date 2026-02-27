@@ -1203,34 +1203,32 @@ if (!txns.length) {
 // Does NOT load into SpendLite — only downloads a CSV file
 // ============================================================================
 
-(function () {
+// ============================================================================
+// PDF → CSV CONVERTER (UTILITY MODE)
+// ============================================================================
+
+document.addEventListener('DOMContentLoaded', () => {
 
   const btn = document.getElementById('convertPdfBtn');
   const input = document.getElementById('pdfConvertInput');
 
-  if (!btn || !input || !window.pdfjsLib) return;
+  if (!btn || !input) {
+    console.log("Convert button or input not found");
+    return;
+  }
 
-  pdfjsLib.disableWorker = true;
-
-  btn.addEventListener('click', () => input.click());
+  btn.addEventListener('click', () => {
+    input.click();
+  });
 
   input.addEventListener('change', async (e) => {
-
     const file = e.target.files?.[0];
     if (!file) return;
 
-    try {
+    alert("File selected: " + file.name); // TEMP TEST
+  });
 
-      const buffer = new Uint8Array(await file.arrayBuffer());
-      const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
-
-      let text = '';
-
-      for (let p = 1; p <= pdf.numPages; p++) {
-        const page = await pdf.getPage(p);
-        const content = await page.getTextContent();
-        text += content.items.map(it => it.str).join('\n') + '\n';
-      }
+});
 
       const txns = extractWestpacStatement(text);
 
