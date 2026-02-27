@@ -43,8 +43,16 @@
       <div class="app-controls">
         <!-- File input for uploading bank CSV files -->
         <!-- accept=".csv" restricts file picker to CSV files only -->
-        <input type="file" id="csvFile" accept=".csv">
-        <input type="file" id="pdfFile" accept="application/pdf">
+    <input type="file" id="csvFile" accept=".csv">
+
+<!-- Existing direct PDF import -->
+<input type="file" id="pdfFile" accept="application/pdf">
+
+<!-- NEW: PDF → CSV converter -->
+<input type="file" id="pdfConvertInput" accept="application/pdf" hidden>
+<button id="convertPdfBtn" class="secondary">
+  Convert Statement PDF → CSV
+</button>
 
 
         <!-- Month filter dropdown and clear button -->
