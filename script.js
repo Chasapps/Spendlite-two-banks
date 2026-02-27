@@ -1101,56 +1101,55 @@ document.addEventListener('DOMContentLoaded', () => {
     return `${year}-${months[mon]}-${day.padStart(2,'0')}`;
   }
 
-  function parseWestpacPdfText(text) {
-  const lines = text
-    .split(/\n+/)
-    .map(l => l.trim())
-    .filter(Boolean);
+function extractWestpacStatement(text) {
 
+  const lines = text.split(/\n+/).map(l => l.trim()).filter(Boolean);
   const txns = [];
 
-  let curDate = null;
-  let curDesc = [];
+  const months = {
+    Jan: "01", Feb: "02", Mar: "03", Apr: "04",
+    May: "05", Jun: "06", Jul: "07", Aug: "08",
+    Sep: "09", Oct: "10", Nov: "11", Dec: "12"
+  };
+
+  let insideTable = false;
 
   for (const line of lines) {
-    // 1️⃣ Date line (standalone)
-    const dateMatch = line.match(/^(\d{1,2}\s+[A-Za-z]{3}\s+\d{4})$/);
-    if (dateMatch) {
-      curDate = normalisePdfDate(dateMatch[1]);
-      curDesc = [];
+
+    // 1️⃣ Detect start of transactions table
+    if (/Date of Transaction/i.test(line) && /Description/i.test(line)) {
+      insideTable = true;
       continue;
     }
 
-    // 2️⃣ Amount line (standalone)
-    const amtMatch = line.match(/^-?\$?\d+\.\d{2}$/);
-    if (amtMatch && curDate) {
-      let amount = Math.abs(parseAmount(line));
+    if (!insideTable) continue;
 
-     const description = curDesc.join(' ').trim();
+    // 2️⃣ Match transaction row
+    const rowMatch = line.match(
+      /^(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{2})\s+(.+?)\s+(-?\d+\.\d{2})$/
+    );
 
-// Skip repayments / payments
-  if (/^PAYMENT[- ]BPAY/i.test(description)) {
-    curDate = null;
-    curDesc = [];
-    continue;
-  }
+    if (rowMatch) {
 
-  txns.push({
-    date: curDate,
-    description,
-    amount
-  });
+      const day = rowMatch[1].padStart(2, "0");
+      const month = months[rowMatch[2]];
+      const year = "20" + rowMatch[3];
+      const description = rowMatch[4].trim();
+      const amount = Math.abs(parseAmount(rowMatch[5]));
 
-      curDate = null;
-      curDesc = [];
-      continue;
+      // Skip repayment lines if desired
+      if (/^PAYMENT[- ]BPAY/i.test(description)) continue;
+
+      txns.push({
+        date: `${year}-${month}-${day}`,
+        description,
+        amount
+      });
     }
 
-    // 3️⃣ Description lines (between date and amount)
-    if (curDate) {
-      // Skip table headers / junk
-      if (/^(withdrawal|deposit|date|description)$/i.test(line)) continue;
-      curDesc.push(line);
+    // 3️⃣ Stop parsing when summary reached
+    if (/Closing Balance/i.test(line)) {
+      break;
     }
   }
 
