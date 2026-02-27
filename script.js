@@ -1198,3 +1198,131 @@ if (!txns.length) {
     }
   });
 })();
+// ============================================================================
+// PDF → CSV CONVERTER (UTILITY MODE)
+// Does NOT load into SpendLite — only downloads a CSV file
+// ============================================================================
+
+(function () {
+
+  const btn = document.getElementById('convertPdfBtn');
+  const input = document.getElementById('pdfConvertInput');
+
+  if (!btn || !input || !window.pdfjsLib) return;
+
+  pdfjsLib.disableWorker = true;
+
+  btn.addEventListener('click', () => input.click());
+
+  input.addEventListener('change', async (e) => {
+
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+
+      const buffer = new Uint8Array(await file.arrayBuffer());
+      const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+
+      let text = '';
+
+      for (let p = 1; p <= pdf.numPages; p++) {
+        const page = await pdf.getPage(p);
+        const content = await page.getTextContent();
+        text += content.items.map(it => it.str).join('\n') + '\n';
+      }
+
+      const txns = extractWestpacStatement(text);
+
+      if (!txns.length) {
+        alert('No transactions detected in PDF.');
+        return;
+      }
+
+      const csv = buildCsvFromTxns(txns);
+      downloadCsv(csv, 'converted_transactions.csv');
+
+    } catch (err) {
+      console.error(err);
+      alert('PDF conversion failed.');
+    }
+
+  });
+
+  function extractWestpacStatement(text) {
+
+    const lines = text.split(/\n+/).map(l => l.trim()).filter(Boolean);
+    const txns = [];
+
+    let curDate = null;
+    let curDesc = [];
+
+    for (const line of lines) {
+
+      const dateMatch = line.match(/^(\d{1,2}\s+[A-Za-z]{3}\s+\d{4})$/);
+      if (dateMatch) {
+        curDate = normalisePdfDate(dateMatch[1]);
+        curDesc = [];
+        continue;
+      }
+
+      const amtMatch = line.match(/^-?\$?\d+\.\d{2}$/);
+      if (amtMatch && curDate) {
+
+        const description = curDesc.join(' ').trim();
+        let amount = Math.abs(parseAmount(line));
+
+        if (!/^PAYMENT[- ]BPAY/i.test(description)) {
+          txns.push({
+            date: curDate,
+            description,
+            amount
+          });
+        }
+
+        curDate = null;
+        curDesc = [];
+        continue;
+      }
+
+      if (curDate) {
+        if (/^(withdrawal|deposit|date|description)$/i.test(line)) continue;
+        curDesc.push(line);
+      }
+    }
+
+    return txns;
+  }
+
+  function buildCsvFromTxns(txns) {
+
+    const header = [
+      "Transaction Date",
+      "Effective Date",
+      "Debit Amount",
+      "Long Description"
+    ];
+
+    const rows = txns.map(t =>
+      `${t.date},${t.date},${t.amount},"${t.description.replace(/"/g, '""')}"`
+    );
+
+    return header.join(",") + "\n" + rows.join("\n");
+  }
+
+  function downloadCsv(content, filename) {
+
+    const blob = new Blob([content], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+
+    URL.revokeObjectURL(url);
+  }
+
+})();
