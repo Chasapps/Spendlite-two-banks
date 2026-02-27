@@ -1212,23 +1212,28 @@ document.addEventListener('DOMContentLoaded', () => {
   const btn = document.getElementById('convertPdfBtn');
   const input = document.getElementById('pdfConvertInput');
 
-  if (!btn || !input) {
-    console.log("Convert button or input not found");
-    return;
-  }
+  if (!btn || !input) return;
 
-  btn.addEventListener('click', () => {
-    input.click();
-  });
+  btn.addEventListener('click', () => input.click());
 
   input.addEventListener('change', async (e) => {
+
     const file = e.target.files?.[0];
-    if (!file) return;
+    if (!file || !window.pdfjsLib) return;
 
-    alert("File selected: " + file.name); // TEMP TEST
-  });
+    try {
 
-});
+      pdfjsLib.disableWorker = true;
+
+      const buffer = new Uint8Array(await file.arrayBuffer());
+      const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+
+      let text = '';
+      for (let p = 1; p <= pdf.numPages; p++) {
+        const page = await pdf.getPage(p);
+        const content = await page.getTextContent();
+        text += content.items.map(it => it.str).join('\n') + '\n';
+      }
 
       const txns = extractWestpacStatement(text);
 
@@ -1246,6 +1251,16 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
   });
+
+  function normalisePdfDate(d) {
+    const [day, mon, year] = d.split(' ');
+    const months = {
+      Jan:'01', Feb:'02', Mar:'03', Apr:'04',
+      May:'05', Jun:'06', Jul:'07', Aug:'08',
+      Sep:'09', Oct:'10', Nov:'11', Dec:'12'
+    };
+    return `${year}-${months[mon]}-${day.padStart(2,'0')}`;
+  }
 
   function extractWestpacStatement(text) {
 
@@ -1268,14 +1283,10 @@ document.addEventListener('DOMContentLoaded', () => {
       if (amtMatch && curDate) {
 
         const description = curDesc.join(' ').trim();
-        let amount = Math.abs(parseAmount(line));
+        const amount = Math.abs(parseAmount(line));
 
         if (!/^PAYMENT[- ]BPAY/i.test(description)) {
-          txns.push({
-            date: curDate,
-            description,
-            amount
-          });
+          txns.push({ date: curDate, description, amount });
         }
 
         curDate = null;
@@ -1293,7 +1304,6 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function buildCsvFromTxns(txns) {
-
     const header = [
       "Transaction Date",
       "Effective Date",
@@ -1309,7 +1319,6 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function downloadCsv(content, filename) {
-
     const blob = new Blob([content], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
 
@@ -1323,4 +1332,4 @@ document.addEventListener('DOMContentLoaded', () => {
     URL.revokeObjectURL(url);
   }
 
-})();
+});
