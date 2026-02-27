@@ -1261,47 +1261,60 @@ document.addEventListener('DOMContentLoaded', () => {
     return `${year}-${months[mon]}-${day.padStart(2,'0')}`;
   }
 
-  function extractWestpacStatement(text) {
+function extractWestpacStatement(text) {
 
-    const lines = text.split(/\n+/).map(l => l.trim()).filter(Boolean);
-    const txns = [];
+  const lines = text.split(/\n+/).map(l => l.trim()).filter(Boolean);
+  const txns = [];
 
-    let curDate = null;
-    let curDesc = [];
+  const months = {
+    Jan: "01", Feb: "02", Mar: "03", Apr: "04",
+    May: "05", Jun: "06", Jul: "07", Aug: "08",
+    Sep: "09", Oct: "10", Nov: "11", Dec: "12"
+  };
 
-    for (const line of lines) {
+  let insideTable = false;
 
-      const dateMatch = line.match(/^(\d{1,2}\s+[A-Za-z]{3}\s+\d{4})$/);
-      if (dateMatch) {
-        curDate = normalisePdfDate(dateMatch[1]);
-        curDesc = [];
-        continue;
-      }
+  for (const line of lines) {
 
-      const amtMatch = line.match(/^-?\$?\d+\.\d{2}$/);
-      if (amtMatch && curDate) {
-
-        const description = curDesc.join(' ').trim();
-        const amount = Math.abs(parseAmount(line));
-
-        if (!/^PAYMENT[- ]BPAY/i.test(description)) {
-          txns.push({ date: curDate, description, amount });
-        }
-
-        curDate = null;
-        curDesc = [];
-        continue;
-      }
-
-      if (curDate) {
-        if (/^(withdrawal|deposit|date|description)$/i.test(line)) continue;
-        curDesc.push(line);
-      }
+    // 1️⃣ Detect start of transactions table
+    if (/Date of Transaction/i.test(line) && /Description/i.test(line)) {
+      insideTable = true;
+      continue;
     }
 
-    return txns;
+    if (!insideTable) continue;
+
+    // 2️⃣ Match transaction row
+    const rowMatch = line.match(
+      /^(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{2})\s+(.+?)\s+(-?\d+\.\d{2})$/
+    );
+
+    if (rowMatch) {
+
+      const day = rowMatch[1].padStart(2, "0");
+      const month = months[rowMatch[2]];
+      const year = "20" + rowMatch[3];
+      const description = rowMatch[4].trim();
+      const amount = Math.abs(parseAmount(rowMatch[5]));
+
+      // Skip repayment lines if desired
+      if (/^PAYMENT[- ]BPAY/i.test(description)) continue;
+
+      txns.push({
+        date: `${year}-${month}-${day}`,
+        description,
+        amount
+      });
+    }
+
+    // 3️⃣ Stop parsing when summary reached
+    if (/Closing Balance/i.test(line)) {
+      break;
+    }
   }
 
+  return txns;
+}
   function buildCsvFromTxns(txns) {
     const header = [
       "Transaction Date",
