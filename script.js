@@ -982,13 +982,18 @@ window.addEventListener('DOMContentLoaded', async () => {
   } catch {}
 
   if (!restored) {
-    try {
-      const res = await fetch('rules.txt');
+  try {
+    const res = await fetch('rules.txt');
+
+    // Only accept real text files
+    const contentType = res.headers.get('content-type') || '';
+    if (res.ok && contentType.includes('text/plain')) {
       const text = await res.text();
       box.value = text;
       restored = true;
-    } catch {}
-  }
+    }
+  } catch {}
+}
 
   if (!restored) {
     box.value = SAMPLE_RULES;
