@@ -1273,29 +1273,38 @@ function extractWestpacStatement(text) {
 
   const txns = [];
 
+  let insideTransactions = false;
+
   for (let i = 0; i < lines.length; i++) {
 
-    // Match date
+    // Start when we hit actual transaction section
+    if (/Westpac Low Fee Platinum Mastercard/i.test(lines[i])) {
+      insideTransactions = true;
+      continue;
+    }
+
+    if (!insideTransactions) continue;
+
     const dateMatch = lines[i].match(
       /^(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{2})$/
     );
 
     if (!dateMatch) continue;
 
-    const day = dateMatch[1].padStart(2, "0");
-    const month = months[dateMatch[2]];
-    const year = "20" + dateMatch[3];
-
-    // Next line should be amount
     const nextLine = lines[i + 1];
 
     const amtMatch = nextLine?.match(/^([\d,]+\.\d{2})(\s*-)?$/);
     if (!amtMatch) continue;
 
-    let amount = parseAmount(amtMatch[1]);
+    const day = dateMatch[1].padStart(2, "0");
+    const month = months[dateMatch[2]];
+    const year = "20" + dateMatch[3];
 
-    // If trailing dash → credit
+    let amount = parseAmount(amtMatch[1]);
     if (amtMatch[2]) amount = -amount;
+
+    // Ignore very large summary balances
+    if (amount > 4000) continue;
 
     txns.push({
       date: `${year}-${month}-${day}`,
