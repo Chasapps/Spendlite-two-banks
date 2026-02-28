@@ -1275,6 +1275,7 @@ function extractWestpacStatement(text) {
   let insideTable = false;
 
   for (const line of lines) {
+    console.log(line);
 
     // 1️⃣ Detect start of transactions table
     if (/Date of Transaction/i.test(line) && /Description/i.test(line)) {
