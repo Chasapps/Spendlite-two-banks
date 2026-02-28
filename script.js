@@ -1271,19 +1271,11 @@ function extractWestpacStatement(text) {
     Sep: "09", Oct: "10", Nov: "11", Dec: "12"
   };
 
-  const txns = [];
+  const dateAmountPairs = [];
+  const descriptions = [];
 
-  let transactionSectionStarted = false;
-
+  // STEP 1: Collect date + amount pairs
   for (let i = 0; i < lines.length; i++) {
-
-    // Detect real transaction table start
-    if (/Westpac Low Fee Platinum Mastercard/i.test(lines[i])) {
-      transactionSectionStarted = true;
-      continue;
-    }
-
-    if (!transactionSectionStarted) continue;
 
     const dateMatch = lines[i].match(
       /^(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{2})$/
@@ -1292,7 +1284,6 @@ function extractWestpacStatement(text) {
     if (!dateMatch) continue;
 
     const nextLine = lines[i + 1];
-
     const amtMatch = nextLine?.match(/^([\d,]+\.\d{2})(\s*-)?$/);
     if (!amtMatch) continue;
 
@@ -1303,16 +1294,41 @@ function extractWestpacStatement(text) {
     let amount = parseAmount(amtMatch[1]);
     if (amtMatch[2]) amount = -amount;
 
-    // Skip summary values like minimum payment and closing balance
     if (amount >= 4000 || amount === 37.00) continue;
 
-    txns.push({
+    dateAmountPairs.push({
       date: `${year}-${month}-${day}`,
-      description: "Imported Transaction",
       amount: Math.abs(amount)
     });
 
-    i++; // skip amount line
+    i++;
+  }
+
+  // STEP 2: Collect merchant description blocks
+  for (let i = 0; i < lines.length; i++) {
+
+    // Skip numeric-only lines
+    if (/^[\d,.\-\s]+$/.test(lines[i])) continue;
+
+    // Skip obvious non-transaction text
+    if (/Westpac|Statement|Balance|Payment|Page|Credit|Limit/i.test(lines[i])) continue;
+
+    // Likely merchant name
+    if (/^[A-Z0-9*.\-\/&\s]+$/.test(lines[i])) {
+      descriptions.push(lines[i]);
+    }
+  }
+
+  // STEP 3: Combine by index
+  const txns = [];
+
+  for (let i = 0; i < dateAmountPairs.length; i++) {
+
+    txns.push({
+      date: dateAmountPairs[i].date,
+      amount: dateAmountPairs[i].amount,
+      description: descriptions[i] || "Imported Transaction"
+    });
   }
 
   return txns;
