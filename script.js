@@ -1304,20 +1304,43 @@ function extractWestpacStatement(text) {
     i++;
   }
 
-  // STEP 2: Collect merchant description blocks
-  for (let i = 0; i < lines.length; i++) {
+// STEP 2: Collect grouped merchant blocks
 
-    // Skip numeric-only lines
-    if (/^[\d,.\-\s]+$/.test(lines[i])) continue;
+let currentBlock = [];
 
-    // Skip obvious non-transaction text
-    if (/Westpac|Statement|Balance|Payment|Page|Credit|Limit/i.test(lines[i])) continue;
+for (let i = 0; i < lines.length; i++) {
 
-    // Likely merchant name
-    if (/^[A-Z0-9*.\-\/&\s]+$/.test(lines[i])) {
-      descriptions.push(lines[i]);
+  const line = lines[i];
+
+  // Skip numeric-only lines
+  if (/^[\d,.\-\s]+$/.test(line)) continue;
+
+  // Skip obvious statement junk
+  if (/Westpac|Statement|Balance|Payment|Page|Credit|Limit|Minimum|Closing|Electronic/i.test(line)) continue;
+
+  // Skip dates
+  if (/^\d{1,2}\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{2}$/.test(line)) continue;
+
+  // If line looks like merchant text
+  if (/^[A-Z0-9*.\-\/&\s]+$/.test(line)) {
+
+    currentBlock.push(line);
+
+    // Look ahead: if next line is numeric or date, end block
+    const nextLine = lines[i + 1];
+    if (!nextLine || /^[\d,.\-\s]+$/.test(nextLine)) {
+      descriptions.push(currentBlock.join(' ').trim());
+      currentBlock = [];
+    }
+
+  } else {
+    // If we hit something else, flush block
+    if (currentBlock.length) {
+      descriptions.push(currentBlock.join(' ').trim());
+      currentBlock = [];
     }
   }
+}
 
   // STEP 3: Combine by index
   const txns = [];
