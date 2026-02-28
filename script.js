@@ -1264,7 +1264,6 @@ document.addEventListener('DOMContentLoaded', () => {
 function extractWestpacStatement(text) {
 
   const lines = text.split(/\n+/).map(l => l.trim()).filter(Boolean);
-  const txns = [];
 
   const months = {
     Jan: "01", Feb: "02", Mar: "03", Apr: "04",
@@ -1272,46 +1271,39 @@ function extractWestpacStatement(text) {
     Sep: "09", Oct: "10", Nov: "11", Dec: "12"
   };
 
-  let insideTable = false;
+  const txns = [];
 
-  for (const line of lines) {
-    console.log(line);
+  for (let i = 0; i < lines.length; i++) {
 
-    // 1️⃣ Detect start of transactions table
-    if (/Date of Transaction/i.test(line) && /Description/i.test(line)) {
-      insideTable = true;
-      continue;
-    }
-
-    if (!insideTable) continue;
-
-    // 2️⃣ Match transaction row
-    const rowMatch = line.match(
-      /^(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{2})\s+(.+?)\s+(-?\d+\.\d{2})$/
+    // Match date
+    const dateMatch = lines[i].match(
+      /^(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{2})$/
     );
 
-    if (rowMatch) {
+    if (!dateMatch) continue;
 
-      const day = rowMatch[1].padStart(2, "0");
-      const month = months[rowMatch[2]];
-      const year = "20" + rowMatch[3];
-      const description = rowMatch[4].trim();
-      const amount = Math.abs(parseAmount(rowMatch[5]));
+    const day = dateMatch[1].padStart(2, "0");
+    const month = months[dateMatch[2]];
+    const year = "20" + dateMatch[3];
 
-      // Skip repayment lines if desired
-      if (/^PAYMENT[- ]BPAY/i.test(description)) continue;
+    // Next line should be amount
+    const nextLine = lines[i + 1];
 
-      txns.push({
-        date: `${year}-${month}-${day}`,
-        description,
-        amount
-      });
-    }
+    const amtMatch = nextLine?.match(/^([\d,]+\.\d{2})(\s*-)?$/);
+    if (!amtMatch) continue;
 
-    // 3️⃣ Stop parsing when summary reached
-    if (/Closing Balance/i.test(line)) {
-      break;
-    }
+    let amount = parseAmount(amtMatch[1]);
+
+    // If trailing dash → credit
+    if (amtMatch[2]) amount = -amount;
+
+    txns.push({
+      date: `${year}-${month}-${day}`,
+      description: "Imported Transaction",
+      amount: Math.abs(amount)
+    });
+
+    i++; // skip amount line
   }
 
   return txns;
