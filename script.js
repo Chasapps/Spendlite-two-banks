@@ -1273,17 +1273,17 @@ function extractWestpacStatement(text) {
 
   const txns = [];
 
-  let insideTransactions = false;
+  let transactionSectionStarted = false;
 
   for (let i = 0; i < lines.length; i++) {
 
-    // Start when we hit actual transaction section
+    // Detect real transaction table start
     if (/Westpac Low Fee Platinum Mastercard/i.test(lines[i])) {
-      insideTransactions = true;
+      transactionSectionStarted = true;
       continue;
     }
 
-    if (!insideTransactions) continue;
+    if (!transactionSectionStarted) continue;
 
     const dateMatch = lines[i].match(
       /^(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{2})$/
@@ -1303,8 +1303,8 @@ function extractWestpacStatement(text) {
     let amount = parseAmount(amtMatch[1]);
     if (amtMatch[2]) amount = -amount;
 
-    // Ignore very large summary balances
-    if (amount > 4000) continue;
+    // Skip summary values like minimum payment and closing balance
+    if (amount >= 4000 || amount === 37.00) continue;
 
     txns.push({
       date: `${year}-${month}-${day}`,
