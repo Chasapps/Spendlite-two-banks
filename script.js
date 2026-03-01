@@ -1078,14 +1078,8 @@ function handleCloseApp() {
 
 document.addEventListener('DOMContentLoaded', () => {
   const closeBtn = document.getElementById('closeAppBtn');
-  if (closeBtn) closeBtn.addEventListener('click', // ============================================================================
-// WESTPAC PDF IMPORT + PDF → CSV CONVERTER (CLEAN + FIXED)
-// ============================================================================
-
-(function () {
-
-  if (!window.pdfjsLib) return;
-  pdfjsLib.disableWorker = true;
+  if (closeBtn) closeBtn.addEventListener('click', handleCloseApp);
+});
 
   // ============================================================
   // CORE WESTPAC EXTRACTION LOGIC (USED BY BOTH MODES)
