@@ -1304,58 +1304,44 @@ function extractWestpacStatement(text) {
     i++;
   }
 
-// STEP 2: Collect grouped merchant blocks
+// STEP 2: Collect merchant text lines (all uppercase blocks)
 
-let currentBlock = [];
+const merchantLines = [];
 
-for (let i = 0; i < lines.length; i++) {
+for (const line of lines) {
 
-  const line = lines[i];
-
-  // Skip numeric-only lines
+  // Skip numeric-only
   if (/^[\d,.\-\s]+$/.test(line)) continue;
-
-  // Skip obvious statement junk
-  if (/Westpac|Statement|Balance|Payment|Page|Credit|Limit|Minimum|Closing|Electronic/i.test(line)) continue;
 
   // Skip dates
   if (/^\d{1,2}\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{2}$/.test(line)) continue;
 
-  // If line looks like merchant text
+  // Skip obvious statement junk
+  if (/Westpac|Statement|Balance|Payment|Page|Credit|Limit|Minimum|Closing|Electronic|AFCA|ABN|Telephone/i.test(line)) continue;
+
+  // Keep likely merchant text
   if (/^[A-Z0-9*.\-\/&\s]+$/.test(line)) {
-
-    currentBlock.push(line);
-
-    // Look ahead: if next line is numeric or date, end block
-    const nextLine = lines[i + 1];
-    if (!nextLine || /^[\d,.\-\s]+$/.test(nextLine)) {
-      descriptions.push(currentBlock.join(' ').trim());
-      currentBlock = [];
-    }
-
-  } else {
-    // If we hit something else, flush block
-    if (currentBlock.length) {
-      descriptions.push(currentBlock.join(' ').trim());
-      currentBlock = [];
-    }
+    merchantLines.push(line.trim());
   }
 }
 
-  // STEP 3: Combine by index
-  const txns = [];
+// We assume merchantLines correspond in order to transactions
+const txns = [];
 
-  for (let i = 0; i < dateAmountPairs.length; i++) {
+const count = dateAmountPairs.length;
 
-    txns.push({
-      date: dateAmountPairs[i].date,
-      amount: dateAmountPairs[i].amount,
-      description: descriptions[i] || "Imported Transaction"
-    });
-  }
+// Take last N merchant lines (these correspond to transaction area)
+const relevantMerchants = merchantLines.slice(-count);
 
-  return txns;
+for (let i = 0; i < count; i++) {
+  txns.push({
+    date: dateAmountPairs[i].date,
+    amount: dateAmountPairs[i].amount,
+    description: relevantMerchants[i] || "Imported Transaction"
+  });
 }
+
+return txns;
   function buildCsvFromTxns(txns) {
     const header = [
       "Transaction Date",
