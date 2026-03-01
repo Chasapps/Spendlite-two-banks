@@ -1078,297 +1078,222 @@ function handleCloseApp() {
 
 document.addEventListener('DOMContentLoaded', () => {
   const closeBtn = document.getElementById('closeAppBtn');
-  if (closeBtn) closeBtn.addEventListener('click', handleCloseApp);
-});
-
-// ============================================================================
-// WESTPAC PDF IMPORT (FINAL, SINGLE PATH, WORKING)
+  if (closeBtn) closeBtn.addEventListener('click', // ============================================================================
+// WESTPAC PDF IMPORT + PDF → CSV CONVERTER (CLEAN + FIXED)
 // ============================================================================
 
 (function () {
-  const pdfInput = document.getElementById('pdfFile');
-  if (!pdfInput || !window.pdfjsLib) return;
 
+  if (!window.pdfjsLib) return;
   pdfjsLib.disableWorker = true;
 
-  function normalisePdfDate(d) {
-    const [day, mon, year] = d.split(' ');
+  // ============================================================
+  // CORE WESTPAC EXTRACTION LOGIC (USED BY BOTH MODES)
+  // ============================================================
+
+  function extractWestpacStatement(text) {
+
+    const lines = text.split(/\n+/).map(l => l.trim()).filter(Boolean);
+
     const months = {
-      Jan:'01', Feb:'02', Mar:'03', Apr:'04',
-      May:'05', Jun:'06', Jul:'07', Aug:'08',
-      Sep:'09', Oct:'10', Nov:'11', Dec:'12'
+      Jan: "01", Feb: "02", Mar: "03", Apr: "04",
+      May: "05", Jun: "06", Jul: "07", Aug: "08",
+      Sep: "09", Oct: "10", Nov: "11", Dec: "12"
     };
-    return `${year}-${months[mon]}-${day.padStart(2,'0')}`;
-  }
 
-function extractWestpacStatement(text) {
+    const dateAmountPairs = [];
 
-  const lines = text.split(/\n+/).map(l => l.trim()).filter(Boolean);
-  const txns = [];
+    // STEP 1: Find date + amount pairs
+    for (let i = 0; i < lines.length; i++) {
 
-  const months = {
-    Jan: "01", Feb: "02", Mar: "03", Apr: "04",
-    May: "05", Jun: "06", Jul: "07", Aug: "08",
-    Sep: "09", Oct: "10", Nov: "11", Dec: "12"
-  };
+      const dateMatch = lines[i].match(
+        /^(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{2})$/
+      );
 
-  let insideTable = false;
+      if (!dateMatch) continue;
 
-  for (const line of lines) {
+      const nextLine = lines[i + 1];
+      const amtMatch = nextLine?.match(/^([\d,]+\.\d{2})(\s*-)?$/);
+      if (!amtMatch) continue;
 
-    // 1️⃣ Detect start of transactions table
-    if (/Date of Transaction/i.test(line) && /Description/i.test(line)) {
-      insideTable = true;
-      continue;
+      const day = dateMatch[1].padStart(2, "0");
+      const month = months[dateMatch[2]];
+      const year = "20" + dateMatch[3];
+
+      let amount = parseAmount(amtMatch[1]);
+      if (amtMatch[2]) amount = -amount;
+
+      // Skip obvious statement summary values
+      if (amount >= 4000 || amount === 37.00) continue;
+
+      dateAmountPairs.push({
+        date: `${year}-${month}-${day}`,
+        amount: Math.abs(amount)
+      });
+
+      i++;
     }
 
-    if (!insideTable) continue;
+    // STEP 2: Group merchant lines between dates
+    const txns = [];
+    let currentDesc = [];
+    let txnIndex = 0;
 
-    // 2️⃣ Match transaction row
-    const rowMatch = line.match(
-      /^(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{2})\s+(.+?)\s+(-?\d+\.\d{2})$/
-    );
+    for (let i = 0; i < lines.length; i++) {
 
-    if (rowMatch) {
+      const dateMatch = lines[i].match(
+        /^(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{2})$/
+      );
 
-      const day = rowMatch[1].padStart(2, "0");
-      const month = months[rowMatch[2]];
-      const year = "20" + rowMatch[3];
-      const description = rowMatch[4].trim();
-      const amount = Math.abs(parseAmount(rowMatch[5]));
+      if (dateMatch) {
 
-      // Skip repayment lines if desired
-      if (/^PAYMENT[- ]BPAY/i.test(description)) continue;
+        if (currentDesc.length && txnIndex < dateAmountPairs.length) {
+          txns.push({
+            date: dateAmountPairs[txnIndex].date,
+            amount: dateAmountPairs[txnIndex].amount,
+            description: currentDesc.join(' ').trim()
+          });
+          txnIndex++;
+          currentDesc = [];
+        }
 
+        continue;
+      }
+
+      const line = lines[i];
+
+      if (/^[\d,.\-\s]+$/.test(line)) continue;
+      if (/Westpac|Statement|Balance|Payment|Page|Credit|Limit|Minimum|Closing|Electronic|AFCA|ABN|Telephone/i.test(line)) continue;
+
+      if (/^[A-Z0-9*.\-\/&\s]+$/.test(line)) {
+        currentDesc.push(line.trim());
+      }
+    }
+
+    // Push final transaction
+    if (currentDesc.length && txnIndex < dateAmountPairs.length) {
       txns.push({
-        date: `${year}-${month}-${day}`,
-        description,
-        amount
+        date: dateAmountPairs[txnIndex].date,
+        amount: dateAmountPairs[txnIndex].amount,
+        description: currentDesc.join(' ').trim()
       });
     }
 
-    // 3️⃣ Stop parsing when summary reached
-    if (/Closing Balance/i.test(line)) {
-      break;
-    }
+    return txns;
   }
 
-  return txns;
-}
+  // ============================================================
+  // MODE 1: IMPORT PDF DIRECTLY INTO SPENDLITE
+  // ============================================================
 
-  pdfInput.addEventListener('change', async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const pdfInput = document.getElementById('pdfFile');
 
-    try {
-      const buffer = new Uint8Array(await file.arrayBuffer());
-      const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+  if (pdfInput) {
+    pdfInput.addEventListener('change', async (e) => {
 
-      let text = '';
-      for (let p = 1; p <= pdf.numPages; p++) {
-        const page = await pdf.getPage(p);
-        const content = await page.getTextContent();
-        text += content.items.map(it => it.str).join('\n') + '\n';
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      try {
+
+        const buffer = new Uint8Array(await file.arrayBuffer());
+        const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+
+        let text = '';
+        for (let p = 1; p <= pdf.numPages; p++) {
+          const page = await pdf.getPage(p);
+          const content = await page.getTextContent();
+          text += content.items.map(it => it.str).join('\n') + '\n';
+        }
+
+        const txns = extractWestpacStatement(text);
+
+        if (!txns.length) {
+          alert('No transactions found in PDF');
+          return;
+        }
+
+        CURRENT_TXNS = txns.map(t => ({
+          ...t,
+          amount: Math.abs(t.amount)
+        }));
+
+        saveTxnsToLocalStorage();
+        rebuildMonthDropdown();
+        applyRulesAndRender();
+
+      } catch (err) {
+        console.error(err);
+        alert('PDF import failed.');
       }
-
-    console.log('=== PDF TEXT START ===');
-console.log(text.slice(0, 2000));
-console.log('=== PDF TEXT END ===');
-
-const txns = parseWestpacPdfText(text);
-
-if (!txns.length) {
-  alert('No transactions found in PDF');
-  return;
-}
-
-      CURRENT_TXNS = txns.map(t => ({
-      ...t,
-        amount: Math.abs(t.amount)
-      }));
-
-      saveTxnsToLocalStorage();
-      rebuildMonthDropdown();
-      applyRulesAndRender();
-
-    } catch (err) {
-      console.error('PDF import failed:', err);
-      alert('Failed to read PDF file');
-    }
-  });
-})();
-// ============================================================================
-// PDF → CSV CONVERTER (UTILITY MODE)
-// Does NOT load into SpendLite — only downloads a CSV file
-// ============================================================================
-
-// ============================================================================
-// PDF → CSV CONVERTER (UTILITY MODE)
-// ============================================================================
-
-document.addEventListener('DOMContentLoaded', () => {
-
-  const btn = document.getElementById('convertPdfBtn');
-  const input = document.getElementById('pdfConvertInput');
-
-  if (!btn || !input) return;
-
-  btn.addEventListener('click', () => input.click());
-
-  input.addEventListener('change', async (e) => {
-
-    const file = e.target.files?.[0];
-    if (!file || !window.pdfjsLib) return;
-
-    try {
-
-      pdfjsLib.disableWorker = true;
-
-      const buffer = new Uint8Array(await file.arrayBuffer());
-      const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
-
-      let text = '';
-      for (let p = 1; p <= pdf.numPages; p++) {
-        const page = await pdf.getPage(p);
-        const content = await page.getTextContent();
-        text += content.items.map(it => it.str).join('\n') + '\n';
-      }
-
-      const txns = extractWestpacStatement(text);
-
-      if (!txns.length) {
-        alert('No transactions detected in PDF.');
-        return;
-      }
-
-      const csv = buildCsvFromTxns(txns);
-      downloadCsv(csv, 'converted_transactions.csv');
-
-    } catch (err) {
-      console.error(err);
-      alert('PDF conversion failed.');
-    }
-
-  });
-
-  function normalisePdfDate(d) {
-    const [day, mon, year] = d.split(' ');
-    const months = {
-      Jan:'01', Feb:'02', Mar:'03', Apr:'04',
-      May:'05', Jun:'06', Jul:'07', Aug:'08',
-      Sep:'09', Oct:'10', Nov:'11', Dec:'12'
-    };
-    return `${year}-${months[mon]}-${day.padStart(2,'0')}`;
-  }
-
-function extractWestpacStatement(text) {
-
-  const lines = text.split(/\n+/).map(l => l.trim()).filter(Boolean);
-
-  const months = {
-    Jan: "01", Feb: "02", Mar: "03", Apr: "04",
-    May: "05", Jun: "06", Jul: "07", Aug: "08",
-    Sep: "09", Oct: "10", Nov: "11", Dec: "12"
-  };
-
-  const dateAmountPairs = [];
-  const descriptions = [];
-
-  // STEP 1: Collect date + amount pairs
-  for (let i = 0; i < lines.length; i++) {
-
-    const dateMatch = lines[i].match(
-      /^(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{2})$/
-    );
-
-    if (!dateMatch) continue;
-
-    const nextLine = lines[i + 1];
-    const amtMatch = nextLine?.match(/^([\d,]+\.\d{2})(\s*-)?$/);
-    if (!amtMatch) continue;
-
-    const day = dateMatch[1].padStart(2, "0");
-    const month = months[dateMatch[2]];
-    const year = "20" + dateMatch[3];
-
-    let amount = parseAmount(amtMatch[1]);
-    if (amtMatch[2]) amount = -amount;
-
-    if (amount >= 4000 || amount === 37.00) continue;
-
-    dateAmountPairs.push({
-      date: `${year}-${month}-${day}`,
-      amount: Math.abs(amount)
     });
-
-    i++;
   }
 
-// STEP 2: Collect merchant text lines (all uppercase blocks)
+  // ============================================================
+  // MODE 2: PDF → CSV CONVERTER
+  // ============================================================
 
-const merchantLines = [];
+  const convertBtn = document.getElementById('convertPdfBtn');
+  const convertInput = document.getElementById('pdfConvertInput');
 
-for (const line of lines) {
+  if (convertBtn && convertInput) {
 
-  // Skip numeric-only
-  if (/^[\d,.\-\s]+$/.test(line)) continue;
+    convertBtn.addEventListener('click', () => convertInput.click());
 
-  // Skip dates
-  if (/^\d{1,2}\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{2}$/.test(line)) continue;
+    convertInput.addEventListener('change', async (e) => {
 
-  // Skip obvious statement junk
-  if (/Westpac|Statement|Balance|Payment|Page|Credit|Limit|Minimum|Closing|Electronic|AFCA|ABN|Telephone/i.test(line)) continue;
+      const file = e.target.files?.[0];
+      if (!file) return;
 
-  // Keep likely merchant text
-  if (/^[A-Z0-9*.\-\/&\s]+$/.test(line)) {
-    merchantLines.push(line.trim());
+      try {
+
+        const buffer = new Uint8Array(await file.arrayBuffer());
+        const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+
+        let text = '';
+        for (let p = 1; p <= pdf.numPages; p++) {
+          const page = await pdf.getPage(p);
+          const content = await page.getTextContent();
+          text += content.items.map(it => it.str).join('\n') + '\n';
+        }
+
+        const txns = extractWestpacStatement(text);
+
+        if (!txns.length) {
+          alert('No transactions detected in PDF.');
+          return;
+        }
+
+        const header = [
+          "Transaction Date",
+          "Effective Date",
+          "Debit Amount",
+          "Long Description"
+        ];
+
+        const rows = txns.map(t =>
+          `${t.date},${t.date},${t.amount},"${t.description.replace(/"/g, '""')}"`
+        );
+
+        const csv = header.join(",") + "\n" + rows.join("\n");
+
+        const blob = new Blob([csv], { type: "text/csv" });
+        const url = URL.createObjectURL(blob);
+
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "converted_transactions.csv";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+
+        URL.revokeObjectURL(url);
+
+      } catch (err) {
+        console.error(err);
+        alert('PDF conversion failed.');
+      }
+    });
   }
-}
 
-// We assume merchantLines correspond in order to transactions
-const txns = [];
-
-const count = dateAmountPairs.length;
-
-// Take last N merchant lines (these correspond to transaction area)
-const relevantMerchants = merchantLines.slice(-count);
-
-for (let i = 0; i < count; i++) {
-  txns.push({
-    date: dateAmountPairs[i].date,
-    amount: dateAmountPairs[i].amount,
-    description: relevantMerchants[i] || "Imported Transaction"
-  });
-}
-
-return txns;
-  function buildCsvFromTxns(txns) {
-    const header = [
-      "Transaction Date",
-      "Effective Date",
-      "Debit Amount",
-      "Long Description"
-    ];
-
-    const rows = txns.map(t =>
-      `${t.date},${t.date},${t.amount},"${t.description.replace(/"/g, '""')}"`
-    );
-
-    return header.join(",") + "\n" + rows.join("\n");
-  }
-
-  function downloadCsv(content, filename) {
-    const blob = new Blob([content], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-
-    URL.revokeObjectURL(url);
-  }
-
-});
+})();
