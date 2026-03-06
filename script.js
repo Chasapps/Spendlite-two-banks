@@ -1108,7 +1108,7 @@ function extractWestpacStatement(text) {
 
     if (!dateMatch) continue;
 
-    const amountLine = lines[i+1];
+    const amountLine = lines[i + 1];
 
     const amtMatch = amountLine?.match(/^([\d,]+\.\d{2})(\s*-)?$/);
     if (!amtMatch) continue;
@@ -1120,33 +1120,31 @@ function extractWestpacStatement(text) {
     let amount = parseAmount(amtMatch[1]);
     if (amtMatch[2]) amount = -amount;
 
-    // Find merchant lines ABOVE the date
-    let descParts = [];
+    let desc = "";
 
+    // look forward for merchant
+    for (let j = i + 2; j < lines.length; j++) {
 
-for (let j = i - 1; j >= 0; j--) {
+      const line = lines[j];
 
-  const line = lines[j];
+      if (/^\d{1,2}\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)/.test(line))
+        break;
 
-  if (/^\d{1,2}\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)/.test(line))
-    break;
+      if (/^[\d,.\-\s]+$/.test(line))
+        continue;
 
-if (
-  /^[A-Za-z][A-Za-z0-9*.\-\/&\s]{3,}$/.test(line) &&
-  !/^\d/.test(line)
-) {
-  descParts.unshift(line.trim());
-}
+      if (/Payment|Amount|Date|Balance|Closing|Opening|Credit|Limit|Minimum/i.test(line))
+        continue;
 
-  if (descParts.length >= 2) break;
-}
-    let desc = descParts.join(" ");
+      desc = line;
+      break;
+    }
 
-    // Clean merchant name
     desc = desc
-      .replace(/\bAUS\b/g,"")
-      .replace(/\bPYPL\b/g,"")
-      .replace(/\bVISA\b/g,"")
+      .replace(/\bAUS\b/gi,"")
+      .replace(/\bPYPL\b/gi,"")
+      .replace(/\bVISA\b/gi,"")
+      .replace(/\*/g,"")
       .replace(/\s+/g," ")
       .trim();
 
