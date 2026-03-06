@@ -1085,96 +1085,80 @@ document.addEventListener('DOMContentLoaded', () => {
   // CORE WESTPAC EXTRACTION LOGIC (USED BY BOTH MODES)
   // ============================================================
 
-  function extractWestpacStatement(text) {
+function extractWestpacStatement(text) {
 
-    const lines = text.split(/\n+/).map(l => l.trim()).filter(Boolean);
+  const months = {
+    Jan:"01",Feb:"02",Mar:"03",Apr:"04",
+    May:"05",Jun:"06",Jul:"07",Aug:"08",
+    Sep:"09",Oct:"10",Nov:"11",Dec:"12"
+  };
 
-    const months = {
-      Jan: "01", Feb: "02", Mar: "03", Apr: "04",
-      May: "05", Jun: "06", Jul: "07", Aug: "08",
-      Sep: "09", Oct: "10", Nov: "11", Dec: "12"
-    };
+  const lines = text
+    .split(/\n+/)
+    .map(l => l.trim())
+    .filter(Boolean);
 
-    const dateAmountPairs = [];
+  const txns = [];
 
-    // STEP 1: Find date + amount pairs
-    for (let i = 0; i < lines.length; i++) {
+  for (let i = 0; i < lines.length; i++) {
 
-      const dateMatch = lines[i].match(
-        /^(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{2})$/
-      );
+    const dateMatch = lines[i].match(
+      /^(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{2})$/
+    );
 
-      if (!dateMatch) continue;
+    if (!dateMatch) continue;
 
-      const nextLine = lines[i + 1];
-      const amtMatch = nextLine?.match(/^([\d,]+\.\d{2})(\s*-)?$/);
-      if (!amtMatch) continue;
+    const amountLine = lines[i+1];
 
-      const day = dateMatch[1].padStart(2, "0");
-      const month = months[dateMatch[2]];
-      const year = "20" + dateMatch[3];
+    const amtMatch = amountLine?.match(/^([\d,]+\.\d{2})(\s*-)?$/);
+    if (!amtMatch) continue;
 
-      let amount = parseAmount(amtMatch[1]);
-      if (amtMatch[2]) amount = -amount;
+    const day = dateMatch[1].padStart(2,"0");
+    const month = months[dateMatch[2]];
+    const year = "20" + dateMatch[3];
 
-      // Skip obvious statement summary values
-      if (amount >= 4000 || amount === 37.00) continue;
+    let amount = parseAmount(amtMatch[1]);
+    if (amtMatch[2]) amount = -amount;
 
-      dateAmountPairs.push({
-        date: `${year}-${month}-${day}`,
-        amount: Math.abs(amount)
-      });
+    // Find merchant lines ABOVE the date
+    let descParts = [];
 
-      i++;
+    for (let j=i-1; j>=0; j--) {
+
+      const line = lines[j];
+
+      if (/^\d{1,2}\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)/.test(line))
+        break;
+
+      if (/^[A-Z0-9*.\-\/&\s]+$/.test(line))
+        descParts.unshift(line);
+
+      if (descParts.length >= 2) break;
     }
 
-    // STEP 2: Group merchant lines between dates
-    const txns = [];
-    let currentDesc = [];
-    let txnIndex = 0;
+    let desc = descParts.join(" ");
 
-    for (let i = 0; i < lines.length; i++) {
+    // Clean merchant name
+    desc = desc
+      .replace(/\bAUS\b/g,"")
+      .replace(/\bPYPL\b/g,"")
+      .replace(/\bVISA\b/g,"")
+      .replace(/\s+/g," ")
+      .trim();
 
-      const dateMatch = lines[i].match(
-        /^(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{2})$/
-      );
+    if (!desc) desc = "Imported Transaction";
 
-      if (dateMatch) {
+    txns.push({
+      date:`${year}-${month}-${day}`,
+      amount:Math.abs(amount),
+      description:desc
+    });
 
-        if (currentDesc.length && txnIndex < dateAmountPairs.length) {
-          txns.push({
-            date: dateAmountPairs[txnIndex].date,
-            amount: dateAmountPairs[txnIndex].amount,
-            description: currentDesc.join(' ').trim()
-          });
-          txnIndex++;
-          currentDesc = [];
-        }
-
-        continue;
-      }
-
-      const line = lines[i];
-
-      if (/^[\d,.\-\s]+$/.test(line)) continue;
-      if (/Westpac|Statement|Balance|Payment|Page|Credit|Limit|Minimum|Closing|Electronic|AFCA|ABN|Telephone/i.test(line)) continue;
-
-      if (/^[A-Z0-9*.\-\/&\s]+$/.test(line)) {
-        currentDesc.push(line.trim());
-      }
-    }
-
-    // Push final transaction
-    if (currentDesc.length && txnIndex < dateAmountPairs.length) {
-      txns.push({
-        date: dateAmountPairs[txnIndex].date,
-        amount: dateAmountPairs[txnIndex].amount,
-        description: currentDesc.join(' ').trim()
-      });
-    }
-
-    return txns;
+    i++; // skip amount line
   }
+
+  return txns;
+}
 
   // ============================================================
   // MODE 1: IMPORT PDF DIRECTLY INTO SPENDLITE
