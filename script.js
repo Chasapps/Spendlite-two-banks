@@ -1130,9 +1130,10 @@ function extractWestpacStatement(text) {
       if (/^\d{1,2}\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)/.test(line))
         break;
 
-      if (/^[A-Z0-9*.\-\/&\s]+$/.test(line))
-        descParts.unshift(line);
-
+  if (
+  /^[A-Z][A-Z0-9*.\-\/&\s]{3,}$/.test(line) &&
+  !/^\d/.test(line)
+)
       if (descParts.length >= 2) break;
     }
 
