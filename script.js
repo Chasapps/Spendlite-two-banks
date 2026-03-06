@@ -1100,7 +1100,7 @@ function extractWestpacStatement(text) {
 
   const txns = [];
 
-  for (let i = 0; i < lines.length; i++) {
+  for (let i = 0; i < lines.length - 1; i++) {
 
     const dateMatch = lines[i].match(
       /^(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{2})$/
@@ -1108,9 +1108,7 @@ function extractWestpacStatement(text) {
 
     if (!dateMatch) continue;
 
-    const amountLine = lines[i + 1];
-
-    const amtMatch = amountLine?.match(/^([\d,]+\.\d{2})(\s*-)?$/);
+    const amtMatch = lines[i+1].match(/^([\d,]+\.\d{2})(\s*-)?$/);
     if (!amtMatch) continue;
 
     const day = dateMatch[1].padStart(2,"0");
@@ -1122,16 +1120,12 @@ function extractWestpacStatement(text) {
 
     let desc = "";
 
-    // look forward for merchant
-    for (let j = i + 2; j < lines.length; j++) {
+    // look anywhere nearby for merchant
+    for (let j = i + 2; j < i + 8 && j < lines.length; j++) {
 
       const line = lines[j];
 
-      if (/^\d{1,2}\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)/.test(line))
-        break;
-
-      if (/^[\d,.\-\s]+$/.test(line))
-        continue;
+      if (/^[\d,.\-\s]+$/.test(line)) continue;
 
       if (/Payment|Amount|Date|Balance|Closing|Opening|Credit|Limit|Minimum/i.test(line))
         continue;
@@ -1156,12 +1150,11 @@ function extractWestpacStatement(text) {
       description:desc
     });
 
-    i++; // skip amount line
+    i++;
   }
 
   return txns;
 }
-
   // ============================================================
   // MODE 1: IMPORT PDF DIRECTLY INTO SPENDLITE
   // ============================================================
