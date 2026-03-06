@@ -1123,20 +1123,23 @@ function extractWestpacStatement(text) {
     // Find merchant lines ABOVE the date
     let descParts = [];
 
-    for (let j=i-1; j>=0; j--) {
 
-      const line = lines[j];
+for (let j = i - 1; j >= 0; j--) {
 
-      if (/^\d{1,2}\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)/.test(line))
-        break;
+  const line = lines[j];
+
+  if (/^\d{1,2}\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)/.test(line))
+    break;
 
   if (
-  /^[A-Z][A-Z0-9*.\-\/&\s]{3,}$/.test(line) &&
-  !/^\d/.test(line)
-)
-      if (descParts.length >= 2) break;
-    }
+    /^[A-Z][A-Z0-9*.\-\/&\s]{3,}$/.test(line) &&
+    !/^\d/.test(line)
+  ) {
+    descParts.unshift(line.trim());
+  }
 
+  if (descParts.length >= 2) break;
+}
     let desc = descParts.join(" ");
 
     // Clean merchant name
